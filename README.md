@@ -28,6 +28,7 @@ ancient-rag-project/
 │
 ├── ingest.py                 # Core vector mapping pipeline script (Data Ingestion)
 └── query.py                  # Operational pipeline controlling multi-modal RAG search and backup paths
+```
 
 ---
 

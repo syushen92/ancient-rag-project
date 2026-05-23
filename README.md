@@ -49,5 +49,5 @@ docker compose up -d
 ```
 ### 2. Configuration & Run
 1. Fill in the `.env` file with your actual API keys
-2. Add the image you want to query to the data folder: `data/your_image.jpg`
+2. Add the image you want to query to the data folder: `data/test_queries/your_image.jpg`
 3. Run the query: `python query.py`

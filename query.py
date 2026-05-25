@@ -39,11 +39,14 @@ def identify_ancient_person(test_image_path):
     # pgvector search with score by vector
     print("Searching in pgvector database...")
     results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=1)
-    
+    text_results = vectorstore.similarity_search_with_score_by_vector(
+        query_vector, k=1, filter={"source_type": "text_record"}
+    ) 
     # Set distance threshold
     # If the distance is greater than this threshold, it is considered "not found in the database"
     # OpenCLIP ViT-H-14 distance threshold can be set between 0.8 and 1.0, which can be adjusted according to actual testing
     DISTANCE_THRESHOLD = 0.2 
+    TEXT_THRESHOLD = 0.3
     
     db_context = ""
     is_found = False
@@ -58,7 +61,18 @@ def identify_ancient_person(test_image_path):
             is_found = True
             print(f"Successfully matched database character: {name} (Distance: {distance:.4f})")
         else:
-            print(f"Although the feature distance is too large ({distance:.4f}), it is judged to be not found in the database.")
+            print(f"Although the feature distance is too large ({distance:.4f}), it is judged to be not found in the database.\n")
+    # 判定二：文字文獻是否有命中？
+    if text_results:
+        txt_doc, txt_dist = text_results[0]
+        if txt_dist <= TEXT_THRESHOLD:
+            txt_name = txt_doc.metadata.get("name", "none")
+            desc = txt_doc.metadata.get("description", "no description")
+            context_pieces.append(f"【文獻比對成功】最符合特徵的人物為：{txt_name}\n歷史描述：{desc}\n(特徵距離: {txt_dist:.4f})")
+            is_found = True
+            print(f"✅ 文獻比對成功: {txt_name} (Distance: {txt_dist:.4f})")
+        else:
+            print(f"❌ 文獻距離過大: {txt_dist:.4f}")
 
     if not is_found:
         db_context = "【SYSTEM HINT】No similar ancient people comparison data was found in the local pgvector database, indicating that this is a new ancient person."
@@ -103,4 +117,4 @@ def identify_ancient_person(test_image_path):
     print("=========================================================\n")
 
 if __name__ == "__main__":
-    identify_ancient_person("data/test_queries/test2.JPG")
+    identify_ancient_person("data/test_queries/安祿山.JPG")

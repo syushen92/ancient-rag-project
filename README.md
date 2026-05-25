@@ -35,19 +35,22 @@ ancient-rag-project/
 ## Quick Start
 
 ### 1. Environment & Database Setup
-Run this block in your terminal to create your environment, sync dependencies, and spin up the vector database all at once:
+Follow the steps to create your environment, sync dependencies, and spin up the vector database all at once:
 
+1.Fill in the `.env` file with your actual API keys
+
+2.Isolate and activate the virtual environment
 ```bash
-# Isolate and activate the virtual environment
 python3 -m venv .venv && source .venv/bin/activate
-
-# Synchronize third-party package dependencies
+```
+3.Synchronize third-party package dependencies
+```bash
 pip install -r requirements.txt
-
-# Initialize PostgreSQL with pgvector container in the background
+```
+4.Initialize PostgreSQL with pgvector container in the background
+```bash
 docker compose up -d
 ```
 ### 2. Configuration & Run
-1. Fill in the `.env` file with your actual API keys
-2. Add the image you want to query to the data folder: `data/test_queries/your_image.jpg`
-3. Run the query: `python query.py`
+1. Add the image you want to query to the data folder: `data/test_queries/your_image.jpg`
+2. Run the query: `python query.py`

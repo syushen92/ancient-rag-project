@@ -68,7 +68,7 @@ def identify_ancient_person(test_image_path):
         if txt_dist <= TEXT_THRESHOLD:
             txt_name = txt_doc.metadata.get("name", "none")
             desc = txt_doc.metadata.get("description", "no description")
-            context_pieces.append(f"【文獻比對成功】最符合特徵的人物為：{txt_name}\n歷史描述：{desc}\n(特徵距離: {txt_dist:.4f})")
+            db_context(f"【文獻比對成功】最符合特徵的人物為：{txt_name}\n歷史描述：{desc}\n(特徵距離: {txt_dist:.4f})")
             is_found = True
             print(f"✅ 文獻比對成功: {txt_name} (Distance: {txt_dist:.4f})")
         else:

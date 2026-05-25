@@ -2,7 +2,7 @@ import os
 from langchain_postgres import PGVector
 from langchain_experimental.open_clip import OpenCLIPEmbeddings
 
-CONNECTION_STRING = "postgresql+psycopg2://dev_user:dev_password@localhost:5433/ancient_people"
+CONNECTION_STRING = "postgresql+psycopg2://dev_user:dev_password@localhost:5432/ancient_people"
 COLLECTION_NAME = "historical_figures"
 
 def clear_database():

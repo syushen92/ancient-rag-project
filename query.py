@@ -32,15 +32,34 @@ def identify_ancient_person(test_image_path):
     if not os.path.exists(test_image_path):
         print(f"Error: Image {test_image_path} not found. Please add an image to the data folder!")
         return
+    
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
+    image_base64 = encode_image_to_base64(test_image_path)
+    
+    pre_prompt = (
+        "請客觀且詳細地描述這張畫像中人物的視覺特徵，包含體態、臉部特徵、衣著樣式與顏色。"
+        "請不要猜測他的歷史身分，只需要純粹的視覺特徵描述，字數控制在 100 字以內。"
+    )
+    pre_message = HumanMessage(
+        content=[
+            {"type": "text", "text": pre_prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+        ]
+    )
+    gemini_vision_desc = llm.invoke([pre_message]).content
 
     print("Converting test image to feature vector...")
     query_vector = embedding_model.embed_image([test_image_path])[0]
+
+    print("Converting Gemini description to text vector...")
+    text_query_vector = embedding_model.embed_documents([gemini_vision_desc])[0]
+
 
     # pgvector search with score by vector
     print("Searching in pgvector database...")
     results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=1)
     text_results = vectorstore.similarity_search_with_score_by_vector(
-        query_vector, k=1, filter={"source_type": "text_record"}
+        text_query_vector, k=1, filter={"source_type": "text_record"}
     ) 
     # Set distance threshold
     # If the distance is greater than this threshold, it is considered "not found in the database"
@@ -68,7 +87,7 @@ def identify_ancient_person(test_image_path):
         if txt_dist <= TEXT_THRESHOLD:
             txt_name = txt_doc.metadata.get("name", "none")
             desc = txt_doc.metadata.get("description", "no description")
-            db_context(f"【文獻比對成功】最符合特徵的人物為：{txt_name}\n歷史描述：{desc}\n(特徵距離: {txt_dist:.4f})")
+            db_context = (f"【文獻比對成功】最符合特徵的人物為：{txt_name}\n歷史描述：{desc}\n(特徵距離: {txt_dist:.4f})")
             is_found = True
             print(f"✅ 文獻比對成功: {txt_name} (Distance: {txt_dist:.4f})")
         else:
@@ -81,8 +100,6 @@ def identify_ancient_person(test_image_path):
         print("Error: Please set your GEMINI_API_KEY in the .env file first!")
         return
         
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
-    image_base64 = encode_image_to_base64(test_image_path)
     
     if is_found:
         prompt_text = (

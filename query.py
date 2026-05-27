@@ -57,54 +57,142 @@ def identify_ancient_person(test_image_path):
 
     # pgvector search with score by vector
     print("Searching in pgvector database...")
-    results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=1)
+    results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=5,filter={"source_type":"image"})
     text_results = vectorstore.similarity_search_with_score_by_vector(
-        text_query_vector, k=1, filter={"source_type": "text_record"}
+        text_query_vector, k=5, filter={"source_type": "text_record"}
     ) 
     # Set distance threshold
     # If the distance is greater than this threshold, it is considered "not found in the database"
     # OpenCLIP ViT-H-14 distance threshold can be set between 0.8 and 1.0, which can be adjusted according to actual testing
-    DISTANCE_THRESHOLD = 0.2 
-    TEXT_THRESHOLD = 0.3
     
-    db_context = ""
-    is_found = False
-    
+    DISTANCE_THRESHOLD = 0.1
+    TEXT_THRESHOLD = 0.2
+
+    # 狀態變數初始化
+    img_passed = False
+    txt_passed = False
+    best_img = None
+    best_txt = None
+
+    # ------------------------------------------
+    # 處理軌道一：圖搜圖的群體平均分數
+    # ------------------------------------------
     if results:
-        doc, distance = results[0]
-        # If the distance is less than the threshold -> it means it is very similar and the match is successful
-        if distance <= DISTANCE_THRESHOLD:
+        img_distances = {}
+        img_descs = {}
+        for doc, dist in results:
             name = doc.metadata.get("name", "none")
             desc = doc.metadata.get("description", "no description")
-            db_context = f"【SYSTEM HINT: Database precise match successful】\nName: {name}\nBackground Information: {desc}\nFeature Distance Score: {distance:.4f} (closer to 0 is more accurate)"
-            is_found = True
-            print(f"Successfully matched database character: {name} (Distance: {distance:.4f})")
-        else:
-            print(f"Although the feature distance is too large ({distance:.4f}), it is judged to be not found in the database.\n")
-    # 判定二：文字文獻是否有命中？
-    if text_results:
-        txt_doc, txt_dist = text_results[0]
-        if txt_dist <= TEXT_THRESHOLD:
-            txt_name = txt_doc.metadata.get("name", "none")
-            desc = txt_doc.metadata.get("description", "no description")
-            db_context = (f"【文獻比對成功】最符合特徵的人物為：{txt_name}\n歷史描述：{desc}\n(特徵距離: {txt_dist:.4f})")
-            is_found = True
-            print(f"✅ 文獻比對成功: {txt_name} (Distance: {txt_dist:.4f})")
-        else:
-            print(f"❌ 文獻距離過大: {txt_dist:.4f}")
 
-    if not is_found:
-        db_context = "【SYSTEM HINT】No similar ancient people comparison data was found in the local pgvector database, indicating that this is a new ancient person."
+            if name not in img_distances:
+                img_distances[name] = []
+                img_descs[name] = desc
+            img_distances[name].append(dist)
+
+        avg_img_results = []
+        for name, dists in img_distances.items():
+            avg_img_results.append({
+                "name": name,
+                "avg_dist": sum(dists) / len(dists),
+                "count": len(dists),
+                "desc": img_descs[name]
+            })
+
+        avg_img_results.sort(key=lambda x: x["avg_dist"])
+        best_img = avg_img_results[0]
+
+        if best_img["avg_dist"] <= DISTANCE_THRESHOLD:
+            img_passed = True
+            print(f"🖼️ 圖片群體比對過關: {best_img['name']} (平均距離: {best_img['avg_dist']:.4f})")
+        else:
+            print(f"❌ 圖片群體距離過大 ({best_img['avg_dist']:.4f})")
+
+    # ------------------------------------------
+    # 處理軌道二：文搜文的群體平均分數
+    # ------------------------------------------
+    if text_results:
+        txt_distances = {}
+        txt_descs = {}
+        for doc, dist in text_results:
+            name = doc.metadata.get("name", "none")
+            desc = doc.metadata.get("description", "no description")
+
+            if name not in txt_distances:
+                txt_distances[name] = []
+                txt_descs[name] = desc
+            txt_distances[name].append(dist)
+
+        avg_txt_results = []
+        for name, dists in txt_distances.items():
+            avg_txt_results.append({
+                "name": name,
+                "avg_dist": sum(dists) / len(dists),
+                "count": len(dists),
+                "desc": txt_descs[name]
+            })
+
+        avg_txt_results.sort(key=lambda x: x["avg_dist"])
+        best_txt = avg_txt_results[0]
+
+        if best_txt["avg_dist"] <= TEXT_THRESHOLD:
+            txt_passed = True
+            print(f"✅ 文獻群體比對過關: {best_txt['name']} (平均距離: {best_txt['avg_dist']:.4f})")
+        else:
+            print(f"❌ 文獻群體距離過大 ({best_txt['avg_dist']:.4f})")
+
+    # ------------------------------------------
+    # 終極判定：雙軌並存，交由大模型與使用者綜合評斷
+    # ------------------------------------------
+    db_context = ""
+    is_found = False
+
+    if img_passed and txt_passed:
+        is_found = True
+        if best_img['name'] == best_txt['name']:
+            print(f"\n🎉 雙軌完美一致！雙方皆判定為：{best_img['name']}")
+            db_context = (
+                f"【SYSTEM HINT: 雙模態完美吻合】\n"
+                f"人物：{best_img['name']}\n"
+                f"歷史描述：{best_txt['desc']}\n"
+                f"(備註：圖片與文獻皆精準指向同一人，可信度極高)"
+            )
+        else:
+            print(f"\n⚖️ 雙軌結果分歧 (圖片推測: {best_img['name']} vs 文獻推測: {best_txt['name']})，交由大模型雙重分析。")
+            db_context = (
+                f"【SYSTEM HINT: 雙模態出現分歧，請同時分析以下兩位候選人】\n"
+                f"候選人一 (基於視覺畫風與輪廓最接近)：{best_img['name']}\n"
+                f"候選人一描述：{best_img['desc']}\n"
+                f"---\n"
+                f"候選人二 (基於衣著與體態等語意最接近)：{best_txt['name']}\n"
+                f"候選人二描述：{best_txt['desc']}\n"
+            )
+            
+    elif img_passed: # 只有圖片過關
+        is_found = True
+        print(f"\n✅ 僅圖片比對成功，判定為: {best_img['name']}")
+        db_context = f"【SYSTEM HINT: 僅圖片比對成功】\n人物：{best_img['name']}\n歷史描述：{best_img['desc']}"
+        
+    elif txt_passed: # 只有文字過關
+        is_found = True
+        print(f"\n✅ 僅文獻比對成功，判定為: {best_txt['name']}")
+        db_context = f"【SYSTEM HINT: 僅文獻比對成功】\n人物：{best_txt['name']}\n歷史描述：{best_txt['desc']}"
+        
+    else: # 都沒過關
+        print("\n❌ 圖片與文字皆未達標，判定為查無此人。")
+        db_context = "【SYSTEM HINT】資料庫中找不到符合此視覺特徵的古人。請啟動盲猜模式。"
 
     if not os.getenv("GEMINI_API_KEY"):
         print("Error: Please set your GEMINI_API_KEY in the .env file first!")
         return
-        
-    
+
+    # ==========================================
+    # 最終大模型生成 (已調整 Prompt 讓它懂得處理兩個人)
+    # ==========================================
     if is_found:
         prompt_text = (
-            f"你是一個歷史學家與視覺分析專家。這張圖片經過資料庫特徵比對，已確認身份。\n"
-            f"請根據以下資料庫提供的精準資訊，結合你的歷史知識，詳細向用戶介紹這張照片中的古人，並確認圖片是否符合該人物特徵：\n\n"
+            f"你是一個歷史學家與視覺分析專家。這張圖片經過我們的多模態資料庫比對，得出了以下結果。\n"
+            f"請根據以下資料庫提供的精準資訊，結合你的歷史知識，詳細向用戶介紹照片中的古人。\n"
+            f"⚠️ 核心任務：如果資料庫判定為同一人，請專心介紹他。但如果資料庫提供了『兩位』不同的候選人，請你秉持客觀，『同時介紹這兩位人物的生平』，並根據畫像中的細節，分析圖片分別與哪位候選人的特徵比較吻合，引導用戶自行參考。\n\n"
             f"{db_context}"
         )
     else:
@@ -134,4 +222,4 @@ def identify_ancient_person(test_image_path):
     print("=========================================================\n")
 
 if __name__ == "__main__":
-    identify_ancient_person("data/test_queries/安祿山.JPG")
+    identify_ancient_person("data/test_queries/唐太宗.JPG")

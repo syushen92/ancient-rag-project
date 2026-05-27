@@ -51,14 +51,20 @@ def main():
         image_path = os.path.join(image_dir, image_file)
         base_name = os.path.splitext(image_file)[0]
 
+        if "_" in base_name:
+            real_name = base_name.split("_")[0] # 切割後拿到 "安祿山"
+        else:
+            real_name = base_name
+
         print(f" -> Converting image {image_file} to vector...")
         image_vector = embedding_model.embed_image([image_path])[0]
 
-        texts_to_insert.append(base_name)
+        texts_to_insert.append(real_name)
         embeddings_to_insert.append(image_vector)
         metadatas_to_insert.append({
-            "name": base_name,
-            "source_type": "image"
+            "name": real_name,
+            "source_type": "image",
+            "original_file": image_file
         })
 
     # ==========================================

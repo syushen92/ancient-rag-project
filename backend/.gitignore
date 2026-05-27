@@ -1,0 +1,7 @@
+data/
+test_db.py
+clear_db.py
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store

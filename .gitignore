@@ -1,5 +1,9 @@
+# credentials
 .env
-data/
-.venv/
-test_db.py
-clear_db.py
+
+# python cache
+__pycache__/
+*.pyc
+
+.vscode/
+.DS_Store

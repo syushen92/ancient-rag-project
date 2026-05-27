@@ -19,10 +19,10 @@ def encode_image_to_base64(image_path):
 def identify_ancient_person(test_image_path):
     print("Loading OpenCLIP model and connecting to database...")
     embedding_model = OpenCLIPEmbeddings(
-        model_name="ViT-H-14", 
+        model_name="ViT-H-14",
         checkpoint="laion2b_s32b_b79k"
     )
-    
+
     vectorstore = PGVector(
         connection=CONNECTION_STRING,
         embeddings=embedding_model,
@@ -32,10 +32,10 @@ def identify_ancient_person(test_image_path):
     if not os.path.exists(test_image_path):
         print(f"Error: Image {test_image_path} not found. Please add an image to the data folder!")
         return
-    
+
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
     image_base64 = encode_image_to_base64(test_image_path)
-    
+
     pre_prompt = (
         "請客觀且詳細地描述這張畫像中人物的視覺特徵，包含體態、臉部特徵、衣著樣式與顏色。"
         "請不要猜測他的歷史身分，只需要純粹的視覺特徵描述，字數控制在 100 字以內。"
@@ -57,14 +57,14 @@ def identify_ancient_person(test_image_path):
 
     # pgvector search with score by vector
     print("Searching in pgvector database...")
-    results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=5,filter={"source_type":"image"})
+    results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=50,filter={"source_type":"image"})
     text_results = vectorstore.similarity_search_with_score_by_vector(
-        text_query_vector, k=5, filter={"source_type": "text_record"}
-    ) 
+        text_query_vector, k=50, filter={"source_type": "text_record"}
+    )
     # Set distance threshold
     # If the distance is greater than this threshold, it is considered "not found in the database"
     # OpenCLIP ViT-H-14 distance threshold can be set between 0.8 and 1.0, which can be adjusted according to actual testing
-    
+
     DISTANCE_THRESHOLD = 0.1
     TEXT_THRESHOLD = 0.2
 
@@ -139,12 +139,32 @@ def identify_ancient_person(test_image_path):
             print(f"✅ 文獻群體比對過關: {best_txt['name']} (平均距離: {best_txt['avg_dist']:.4f})")
         else:
             print(f"❌ 文獻群體距離過大 ({best_txt['avg_dist']:.4f})")
-
+    
     # ------------------------------------------
     # 終極判定：雙軌並存，交由大模型與使用者綜合評斷
     # ------------------------------------------
     db_context = ""
     is_found = False
+
+    # 🌟 新增：準備一個專門用來黏在最前面的字串 (System Log)
+    system_log = "【系統比對數據】\n"
+
+    if img_passed:
+        system_log += f"🖼️ 圖片群體比對過關: {best_img['name']} (平均距離: {best_img['avg_dist']:.4f})\n"
+    else:
+        system_log += "❌ 圖片比對未達標\n"
+
+    if txt_passed:
+        system_log += f"✅ 文獻群體比對過關: {best_txt['name']} (平均距離: {best_txt['avg_dist']:.4f})\n"
+    else:
+        system_log += "❌ 文獻比對未達標\n"
+
+    # 🌟 核心修改：將 Gemini 輸出的第一步視覺描述也加入 log 中
+    system_log += f"\n【Gemini 初始特徵描述】\n{gemini_vision_desc}\n"
+
+    # 💡 修正處：在等號前面加上 \n，避免 Markdown 誤認為是標題底線
+    system_log += "\n========================\n\n"
+
 
     if img_passed and txt_passed:
         is_found = True
@@ -166,17 +186,17 @@ def identify_ancient_person(test_image_path):
                 f"候選人二 (基於衣著與體態等語意最接近)：{best_txt['name']}\n"
                 f"候選人二描述：{best_txt['desc']}\n"
             )
-            
+
     elif img_passed: # 只有圖片過關
         is_found = True
         print(f"\n✅ 僅圖片比對成功，判定為: {best_img['name']}")
         db_context = f"【SYSTEM HINT: 僅圖片比對成功】\n人物：{best_img['name']}\n歷史描述：{best_img['desc']}"
-        
+
     elif txt_passed: # 只有文字過關
         is_found = True
         print(f"\n✅ 僅文獻比對成功，判定為: {best_txt['name']}")
         db_context = f"【SYSTEM HINT: 僅文獻比對成功】\n人物：{best_txt['name']}\n歷史描述：{best_txt['desc']}"
-        
+
     else: # 都沒過關
         print("\n❌ 圖片與文字皆未達標，判定為查無此人。")
         db_context = "【SYSTEM HINT】資料庫中找不到符合此視覺特徵的古人。請啟動盲猜模式。"
@@ -186,7 +206,7 @@ def identify_ancient_person(test_image_path):
         return
 
     # ==========================================
-    # 最終大模型生成 (已調整 Prompt 讓它懂得處理兩個人)
+    # 最終大模型生成
     # ==========================================
     if is_found:
         prompt_text = (
@@ -199,7 +219,7 @@ def identify_ancient_person(test_image_path):
         # 盲猜
         prompt_text = (
             f"{db_context}\n"
-            "現在，請你發揮你強大的歷史、考古、古代服飾、髮型與藝術畫風知識，仔細分析這張圖片。\n"
+            "現在，請你發緯你強大的歷史、考古、古代服飾、髮型與藝術畫風知識，仔細分析這張圖片。\n"
             "請你觀察圖片中人物的冠冕、衣服樣式（如領口、顏色）、鬍鬚、五官特徵，甚至畫作的線條與紙張風格。\n"
             "即使資料庫沒有他的資料，也請你「基於你自己的判斷」，在回答中大膽給出一個『最有可能』的古人答案（例如：這看起來最像是唐太宗、或是蘇軾），"
             "並詳細列出你這樣盲猜的視覺依據與歷史推論理由。"
@@ -208,20 +228,20 @@ def identify_ancient_person(test_image_path):
     message = HumanMessage(
         content=[
             {"type": "text", "text": prompt_text},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
-            }
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
         ]
     )
-    
+
     response = llm.invoke([message])
-    
+
+    # 🌟 關鍵：在這裡把數據紀錄跟 Gemini 的回覆直接黏起來
+    final_output = f"{system_log}{response.content}"
+
     print("\n================== The Final Results ==================")
-    print(response.content)
+    print(final_output)
     print("=========================================================\n")
-    
-    return response.content
+
+    return final_output
 
 if __name__ == "__main__":
-    identify_ancient_person("data/test_queries/唐太宗.JPG")
+    identify_ancient_person("data/test_queries/武則天.JPEG")

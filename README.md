@@ -14,8 +14,8 @@ ancient-rag-project/
 │   ├── ingest.py             # Vector database seeding script
 │   ├── query.py              # LLM + Vector Search core logic
 │   └── data/
-│       ├── image/                # Portraits used to seed the vector database (Embedding data)
-│       └── test_queries/         # Input images used for searching and blind-guessing tests     
+│       ├── image/            # Portraits used to seed the vector database (Embedding data)
+│       └── test_queries/     # Input images used for searching and blind-guessing tests     
 │   ├── requirements.txt      
 │   └── Dockerfile            
 ├── docker-compose.yml       

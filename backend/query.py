@@ -132,6 +132,8 @@ def identify_ancient_person(test_image_path):
     print("\n================== The Final Results ==================")
     print(response.content)
     print("=========================================================\n")
+    
+    return response.content
 
 if __name__ == "__main__":
     identify_ancient_person("data/test_queries/安祿山.JPG")

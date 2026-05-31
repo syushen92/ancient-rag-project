@@ -1,4 +1,3 @@
-# query.py
 import os
 import base64
 from langchain_postgres import PGVector
@@ -12,28 +11,44 @@ load_dotenv()
 CONNECTION_STRING = os.getenv("DATABASE_URL")
 COLLECTION_NAME = "historical_figures"
 
-def encode_image_to_base64(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
-
-def identify_ancient_person(test_image_path):
-    print("Loading OpenCLIP model and connecting to database...")
+# ==========================================
+# 🌟 全域初始化區域 (Global Initialization) 🌟
+# 把肥大的模型跟資料庫連線移到這裡，整個系統只會載入一次！
+# ==========================================
+print("🧠 [系統初始化] 正在載入 OpenCLIP 模型、資料庫連線與 Gemini API...")
+try:
+    # 1. 載入視覺特徵模型
     embedding_model = OpenCLIPEmbeddings(
         model_name="ViT-H-14",
         checkpoint="laion2b_s32b_b79k"
     )
 
+    # 2. 建立資料庫連線
     vectorstore = PGVector(
         connection=CONNECTION_STRING,
         embeddings=embedding_model,
         collection_name=COLLECTION_NAME,
     )
 
+    # 3. 預先準備好大模型
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
+    
+    print("✅ [系統初始化] 載入完成！準備好接收圖片了。")
+except Exception as e:
+    print(f"❌ 初始化發生錯誤: {e}")
+
+# ==========================================
+
+def encode_image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+def identify_ancient_person(test_image_path):
     if not os.path.exists(test_image_path):
         print(f"Error: Image {test_image_path} not found. Please add an image to the data folder!")
-        return
+        return "❌ 找不到測試圖片檔案"
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
+    # 以下邏輯完全保留你原本的寫法，我們只移除了重複載入的部分
     image_base64 = encode_image_to_base64(test_image_path)
 
     pre_prompt = (
@@ -46,25 +61,23 @@ def identify_ancient_person(test_image_path):
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
         ]
     )
+    
+    # 呼叫已經全域載入好的 llm
     gemini_vision_desc = llm.invoke([pre_message]).content
 
-    print("Converting test image to feature vector...")
+    # 轉換圖片向量
     query_vector = embedding_model.embed_image([test_image_path])[0]
 
-    print("Converting Gemini description to text vector...")
+    # 轉換文字向量
     text_query_vector = embedding_model.embed_documents([gemini_vision_desc])[0]
 
-
     # pgvector search with score by vector
-    print("Searching in pgvector database...")
     results = vectorstore.similarity_search_with_score_by_vector(query_vector, k=50,filter={"source_type":"image"})
     text_results = vectorstore.similarity_search_with_score_by_vector(
         text_query_vector, k=50, filter={"source_type": "text_record"}
     )
-    # Set distance threshold
-    # If the distance is greater than this threshold, it is considered "not found in the database"
-    # OpenCLIP ViT-H-14 distance threshold can be set between 0.8 and 1.0, which can be adjusted according to actual testing
 
+    # 門檻值
     DISTANCE_THRESHOLD = 0.1
     TEXT_THRESHOLD = 0.2
 
@@ -139,14 +152,13 @@ def identify_ancient_person(test_image_path):
             print(f"✅ 文獻群體比對過關: {best_txt['name']} (平均距離: {best_txt['avg_dist']:.4f})")
         else:
             print(f"❌ 文獻群體距離過大 ({best_txt['avg_dist']:.4f})")
-    
+
     # ------------------------------------------
     # 終極判定：雙軌並存，交由大模型與使用者綜合評斷
     # ------------------------------------------
     db_context = ""
     is_found = False
 
-    # 🌟 新增：準備一個專門用來黏在最前面的字串 (System Log)
     system_log = "【系統比對數據】\n"
 
     if img_passed:
@@ -157,14 +169,10 @@ def identify_ancient_person(test_image_path):
     if txt_passed:
         system_log += f"✅ 文獻群體比對過關: {best_txt['name']} (平均距離: {best_txt['avg_dist']:.4f})\n"
     else:
-        system_log += "❌ 文獻比對未達標\n"
+        system_log += "❌ 文獻比值得未達標\n"
 
-    # 🌟 核心修改：將 Gemini 輸出的第一步視覺描述也加入 log 中
     system_log += f"\n【Gemini 初始特徵描述】\n{gemini_vision_desc}\n"
-
-    # 💡 修正處：在等號前面加上 \n，避免 Markdown 誤認為是標題底線
     system_log += "\n========================\n\n"
-
 
     if img_passed and txt_passed:
         is_found = True
@@ -187,23 +195,23 @@ def identify_ancient_person(test_image_path):
                 f"候選人二描述：{best_txt['desc']}\n"
             )
 
-    elif img_passed: # 只有圖片過關
+    elif img_passed: 
         is_found = True
         print(f"\n✅ 僅圖片比對成功，判定為: {best_img['name']}")
         db_context = f"【SYSTEM HINT: 僅圖片比對成功】\n人物：{best_img['name']}\n歷史描述：{best_img['desc']}"
 
-    elif txt_passed: # 只有文字過關
+    elif txt_passed: 
         is_found = True
         print(f"\n✅ 僅文獻比對成功，判定為: {best_txt['name']}")
         db_context = f"【SYSTEM HINT: 僅文獻比對成功】\n人物：{best_txt['name']}\n歷史描述：{best_txt['desc']}"
 
-    else: # 都沒過關
+    else: 
         print("\n❌ 圖片與文字皆未達標，判定為查無此人。")
         db_context = "【SYSTEM HINT】資料庫中找不到符合此視覺特徵的古人。請啟動盲猜模式。"
 
     if not os.getenv("GEMINI_API_KEY"):
         print("Error: Please set your GEMINI_API_KEY in the .env file first!")
-        return
+        return "❌ 未設定 API KEY"
 
     # ==========================================
     # 最終大模型生成
@@ -216,10 +224,9 @@ def identify_ancient_person(test_image_path):
             f"{db_context}"
         )
     else:
-        # 盲猜
         prompt_text = (
             f"{db_context}\n"
-            "現在，請你發緯你強大的歷史、考古、古代服飾、髮型與藝術畫風知識，仔細分析這張圖片。\n"
+            "現在，請你發揮你強大的歷史、考古、古代服飾、髮型與藝術畫風知識，仔細分析這張圖片。\n"
             "請你觀察圖片中人物的冠冕、衣服樣式（如領口、顏色）、鬍鬚、五官特徵，甚至畫作的線條與紙張風格。\n"
             "即使資料庫沒有他的資料，也請你「基於你自己的判斷」，在回答中大膽給出一個『最有可能』的古人答案（例如：這看起來最像是唐太宗、或是蘇軾），"
             "並詳細列出你這樣盲猜的視覺依據與歷史推論理由。"
@@ -233,8 +240,6 @@ def identify_ancient_person(test_image_path):
     )
 
     response = llm.invoke([message])
-
-    # 🌟 關鍵：在這裡把數據紀錄跟 Gemini 的回覆直接黏起來
     final_output = f"{system_log}{response.content}"
 
     print("\n================== The Final Results ==================")

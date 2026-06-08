@@ -4,6 +4,36 @@ A modern Full-Stack Retrieval-Augmented Generation (RAG) web application that id
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    FE["⬡ React Frontend\nlocalhost:5173"]
+    API["⬡ FastAPI Backend\nlocalhost:8000"]
+    CLIP["OpenCLIP ViT-H-14\nEmbedding Model"]
+    PG[("PostgreSQL + pgvector\nCollection: historical_figures")]
+    THRESH{"Cosine Distance\n≤ 0.2?"}
+    GEMINI["Gemini 2.5 Flash\nMultimodal LLM"]
+    OUT["Identification Result"]
+
+    FE -->|"POST /api/chat\n(image upload)"| API
+    API -->|"embed image"| CLIP
+    CLIP -->|"query vector"| PG
+    PG -->|"top-1 nearest neighbor"| THRESH
+    THRESH -->|"Hit — name + description"| GEMINI
+    THRESH -->|"Miss — blind inference"| GEMINI
+    API -->|"image base64"| GEMINI
+    GEMINI --> OUT
+    OUT -->|"JSON response"| FE
+
+    subgraph Ingestion["Data Ingestion  (ingest.py)"]
+        IMG["Portrait Images\ndata/image/"]
+        TXT["Text Records\ndata/texts/historical_figures.json"]
+        IMG -->|"embed_image()"| PG
+        TXT -->|"embed_documents()"| PG
+    end
+```
+
+### File Structure
+
 ```text
 ancient-rag-project/
 ├── frontend/                 
